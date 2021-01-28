@@ -4,9 +4,13 @@ import java.util.Map;
 import java.util.stream.Collectors;
 import javax.annotation.PostConstruct;
 
-import me.chanjar.weixin.cp.config.impl.WxCpDefaultConfigImpl;
+import javax.annotation.Resource;
+import me.chanjar.weixin.common.redis.RedisTemplateWxRedisOps;
+import me.chanjar.weixin.common.redis.WxRedisOps;
+import me.chanjar.weixin.cp.config.impl.WxCpRedissonConfigImpl;
 import me.chanjar.weixin.cp.constant.WxCpConsts;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Configuration;
 
@@ -25,10 +29,12 @@ import me.chanjar.weixin.common.api.WxConsts;
 import me.chanjar.weixin.cp.api.WxCpService;
 import me.chanjar.weixin.cp.api.impl.WxCpServiceImpl;
 import me.chanjar.weixin.cp.message.WxCpMessageRouter;
+import org.springframework.data.redis.core.StringRedisTemplate;
 
 /**
  * @author Binary Wang(https://github.com/binarywang)
  */
+@ConditionalOnClass(StringRedisTemplate.class)
 @Configuration
 @EnableConfigurationProperties(WxCpProperties.class)
 public class WxCpConfiguration {
@@ -41,6 +47,8 @@ public class WxCpConfiguration {
     private SubscribeHandler subscribeHandler;
 
     private WxCpProperties properties;
+    @Resource
+    private StringRedisTemplate stringRedisTemplate;
 
     private static Map<Integer, WxCpMessageRouter> routers = Maps.newHashMap();
     private static Map<Integer, WxCpService> cpServices = Maps.newHashMap();
@@ -70,13 +78,18 @@ public class WxCpConfiguration {
 
     @PostConstruct
     public void initServices() {
+        Long expire = stringRedisTemplate.getExpire("haha");
+        System.out.println("超时时间：" + expire);
         cpServices = this.properties.getAppConfigs().stream().map(a -> {
-            val configStorage = new WxCpDefaultConfigImpl();
+
+            WxRedisOps wxRedisOps = new RedisTemplateWxRedisOps(stringRedisTemplate);
+            val configStorage = new WxCpRedissonConfigImpl(wxRedisOps, "wx_demo:");
             configStorage.setCorpId(this.properties.getCorpId());
             configStorage.setAgentId(a.getAgentId());
             configStorage.setCorpSecret(a.getSecret());
             configStorage.setToken(a.getToken());
             configStorage.setAesKey(a.getAesKey());
+
             val service = new WxCpServiceImpl();
             service.setWxCpConfigStorage(configStorage);
             routers.put(a.getAgentId(), this.newRouter(service));
